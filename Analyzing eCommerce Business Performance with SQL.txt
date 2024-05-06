@@ -1,0 +1,127 @@
+
+WITH
+calc_mau AS (
+    SELECT tahun, avg(mau) AS avg_mau
+    FROM (
+        SELECT DISTINCT
+            EXTRACT(year FROM o.order_purchase_timestamp) AS tahun,
+            EXTRACT(month FROM o.order_purchase_timestamp) AS bulan,
+            COUNT(DISTINCT c.customer_unique_id) AS mau
+        FROM orders o
+        JOIN customers c ON o.customer_id = c.customer_id
+        GROUP BY 1, 2
+    ) AS TmpA
+    GROUP BY 1
+),
+
+calc_newcust AS ( 
+    SELECT
+        EXTRACT(year FROM first_purchase_time) AS tahun,
+        COUNT(1) AS new_customers
+    FROM (
+        SELECT
+            c.customer_unique_id,
+            MIN(o.order_purchase_timestamp) AS first_purchase_time
+        FROM
+            orders o
+        JOIN 
+            customers c ON c.customer_id = o.customer_id
+        GROUP BY 1
+    ) AS subq
+    GROUP BY 1
+),
+
+calc_repeat AS ( 
+    SELECT
+        tahun,
+        COUNT(DISTINCT customer_unique_id) AS repeating_customers
+    FROM (
+        SELECT
+            EXTRACT(year FROM o.order_purchase_timestamp) AS tahun,
+            c.customer_unique_id,
+            COUNT(1) AS purchase_frequency
+        FROM
+            orders o
+        JOIN
+            customers c ON c.customer_id = o.customer_id
+        GROUP BY 1, 2
+        HAVING COUNT(1) > 1
+    ) AS subq
+    GROUP BY 1
+),
+
+calc_aov AS (
+    SELECT
+        tahun,
+        ROUND(AVG(frequency_purchase), 3) AS avg_orders_per_customers
+    FROM (
+        SELECT
+            EXTRACT(year FROM o.order_purchase_timestamp) AS tahun,
+            c.customer_unique_id,
+            COUNT(1) AS frequency_purchase
+        FROM
+            orders o
+        JOIN
+            customers c ON c.customer_id = o.customer_id
+        GROUP BY 1, 2
+    ) AS a
+    GROUP BY 1
+)
+
+SELECT
+    mau.tahun,
+    mau.avg_mau as rata_rata_MAU,
+    newc.new_customers as new_customers,
+    rep.repeating_customers as repeat_order_customers,
+    aov.avg_orders_per_customers
+FROM 
+    calc_mau AS mau
+JOIN 
+    calc_newcust newc ON mau.tahun = newc.tahun
+JOIN 
+    calc_repeat rep ON rep.tahun = mau.tahun
+JOIN 
+    calc_aov aov ON aov.tahun = mau.tahun;
+
+
+	
+====================================================
+select
+	a.year as tahun,
+	a.product_category_name as top_product_per_tahun,
+	a.revenue as category_revenue,
+	b.revenue as total_revenue_per_tahun,
+	c.product_category_name as most_canceled_product_category,
+	c.num_canceled as category_num_canceled,
+	d.num_canceled_orders as canceled_per_year
+from top_product_category_by_revenue_per_year a
+join total_revenue_per_year b on a.year = b.year
+join most_canceled_product_category_per_year c on a.year = c.year
+join total_cancel_per_year d on a.year = d.year
+
+=====================================================
+with
+tmp as (
+	select
+		date_part('year', o.order_purchase_timestamp) as year,
+		op.payment_type,
+		count(1) as num_used
+	from order_payments op
+	join orders o on o.order_id = op.order_id
+	group by 1, 2
+)
+
+select *,
+	case when year_2017 = 0 then NULL
+		else round((year_2018 - year_2017) / year_2017, 2)
+	end as pct_change_2017_2018
+from
+(
+	select
+		payment_type,
+		sum(case when year = '2016' then num_used else 0 end) as year_2016,
+		sum(case when year = '2017' then num_used else 0 end) as year_2017,
+		sum(case when year = '2018' then num_used else 0 end) as year_2018
+	from tmp
+	group by 1
+) subq
